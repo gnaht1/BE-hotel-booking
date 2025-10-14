@@ -10,10 +10,32 @@ export const createRoom = async (req, res)=>{
 
         if(!hotel) return res.json({ success: false, message: "No Hotel found" });
 
+        // Debug logging
+        console.log('Files received:', req.files);
+        console.log('Files length:', req.files ? req.files.length : 'undefined');
+
+        // Check if files are uploaded
+        if (!req.files || req.files.length === 0) {
+            return res.json({ success: false, message: "At least one image is required" });
+        }
+
         // upload images to cloudinary
         const uploadImages = req.files.map(async (file) => {
-            const response = await cloudinary.uploader.upload(file.path);
-            return response.secure_url;
+            console.log('Uploading file:', file.originalname, 'Size:', file.size, 'Type:', file.mimetype);
+            return new Promise((resolve, reject) => {
+                cloudinary.uploader.upload_stream(
+                    { resource_type: "auto" },
+                    (error, result) => {
+                        if (error) {
+                            console.error('Cloudinary upload error:', error);
+                            reject(error);
+                        } else {
+                            console.log('Upload successful:', result.secure_url);
+                            resolve(result.secure_url);
+                        }
+                    }
+                ).end(file.buffer);
+            });
         })
         // Wait for all uploads to complete
         const images = await Promise.all(uploadImages)
