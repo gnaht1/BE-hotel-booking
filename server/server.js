@@ -14,33 +14,21 @@ connectDB();
 connectCloudinary();
 
 const app = express();
+app.use(cors()); // Enable CORS for all routes
 
-// ✅ CORS CHUẨN CHO VERCEL + CLERK + RENDER
-app.set('trust proxy', 1);
-app.use(cors({
-  origin: [
-    "http://localhost:5173",                 // Local Development
-    "https://be-hotel-booking.vercel.app"    // Deployed FE on Vercel
-  ],
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"]
-}));
-
-// Clerk middleware (KHÔNG được đặt trước cors)
+// Clerk middleware
 app.use(express.json());
-app.use(clerkMiddleware());
+app.use(clerkMiddleware())
 
 // api to listen to clerk webhook
 app.use("/api/clerk", clerkWebhook);
 
-// Test root API
-app.get('/', (req, res) => res.send("API is working"));
-
-// API routes
+app.get('/', (req, res) => res.send("API is working"));   
 app.use("/api/user", userRouter);
 app.use("/api/hotels", hotelRouter);
 app.use("/api/rooms", roomRouter);
 app.use("/api/bookings", bookingRouter);
 
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, ()=> console.log(`Server is running on port ${PORT}`));
