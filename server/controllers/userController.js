@@ -14,14 +14,17 @@ export const getUserData = async(req, res) => {
 // Stored user recent search cities 
 export const storeRecentSearchCities = async(req, res) => {  
     try {
-        const {recentSearchCities} = req.body;
+        const {recentSearchCity} = req.body;
         const user = await req.user;
 
-        if (user.recentSearchCities.length < 3) {
-            user.recentSearchCities.push(recentSearchCities);
-        } else {
-            user.recentSearchCities.shift();
-            user.recentSearchCities.push(recentSearchCities);
+        if(!recentSearchCity){
+            return res.json({success: false, message: "recentSearchCity is required"});
+        }
+
+        user.recentSearchCities = user.recentSearchCities.filter(city => city !== recentSearchCity);
+        user.recentSearchCities.push(recentSearchCity);
+        if (user.recentSearchCities.length > 3) {
+            user.recentSearchCities = user.recentSearchCities.slice(-3);
         }
 
         await user.save();
