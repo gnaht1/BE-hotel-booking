@@ -98,11 +98,15 @@ const mailOptions = {
 // GET /api/bookings/user
 export const getUserBookings = async (req, res) =>{
     try {
+        if (!req.user) {
+            return res.status(401).json({success: false, message: "User not authenticated"});
+        }
         const user = req.user._id;
         const bookings = await Booking.find({user}).populate("room hotel").sort({createdAt: -1});
         res.json({success: true, bookings})
     } catch (error) {
-        res.json({ success: false, message: "Failed to fetch bookings" });
+        console.error("Get user bookings error:", error);
+        res.status(500).json({ success: false, message: "Failed to fetch bookings: " + error.message });
     }
 }
 
