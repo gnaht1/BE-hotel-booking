@@ -9,12 +9,16 @@ import hotelRouter from "./routes/hotelRoutes.js";
 import connectCloudinary from "./configs/cloudinary.js";
 import roomRouter from "./routes/roomRoutes.js";
 import bookingRouter from "./routes/bookingRoutes.js";
+import { stripeWebhook } from "./controllers/bookingController.js";
 
 connectDB();
 connectCloudinary();
 
 const app = express();
 app.use(cors()); // Enable CORS for all routes
+
+// Stripe webhook needs raw body - must come before express.json()
+app.post('/api/bookings/stripe-webhook', express.raw({type: 'application/json'}), stripeWebhook);
 
 // Clerk middleware
 app.use(express.json());

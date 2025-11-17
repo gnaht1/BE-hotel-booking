@@ -98,11 +98,15 @@ const mailOptions = {
 // GET /api/bookings/user
 export const getUserBookings = async (req, res) =>{
     try {
+        if (!req.user) {
+            return res.status(401).json({success: false, message: "User not authenticated"});
+        }
         const user = req.user._id;
         const bookings = await Booking.find({user}).populate("room hotel").sort({createdAt: -1});
         res.json({success: true, bookings})
     } catch (error) {
-        res.json({ success: false, message: "Failed to fetch bookings" });
+        console.error("Get user bookings error:", error);
+        res.status(500).json({ success: false, message: "Failed to fetch bookings: " + error.message });
     }
 }
 
@@ -134,6 +138,11 @@ export const stripePayment = async (req, res) =>{
         const {bookingId} = req.body;
 
         const booking = await Booking.findById(bookingId);  
+        
+        if (!booking) {
+            return res.status(404).json({ success: false, message: "Booking not found" });
+        }
+
         const roomData = await Room.findById(booking.room).populate("hotel");
         const totalPrice = booking.totalPrice;
         const {origin} = req.headers;
@@ -158,16 +167,98 @@ export const stripePayment = async (req, res) =>{
         const session = await stripeInstance.checkout.sessions.create({
             line_items,
             mode: "payment",
-            success_url: `${origin}/loader/my-bookings`,
+            success_url: `${origin}/loader/my-bookings?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${origin}/my-bookings`,
             metadata: {
                 bookingId,
-
             }
         })
         res.json({ success: true, url: session.url });
     }
     catch (error) {
-        res.json({ success: false, message: "Failed payment!" });
+        console.error("Stripe payment error:", error);
+        res.status(500).json({ success: false, message: "Failed payment: " + error.message });
     }
+}
+
+// API to verify Stripe payment and update booking
+// POST /api/bookings/verify-payment
+export const verifyPayment = async (req, res) => {
+    try {
+        const { sessionId } = req.body;
+
+        if (!sessionId) {
+            return res.status(400).json({ success: false, message: "Session ID is required" });
+        }
+
+        const stripeInstance = new stripe(process.env.STRIPE_SECRET_KEY);
+        
+        // Retrieve the session from Stripe
+        const session = await stripeInstance.checkout.sessions.retrieve(sessionId);
+
+        if (session.payment_status === 'paid') {
+            const bookingId = session.metadata.bookingId;
+            
+            // Update booking payment status
+            const booking = await Booking.findByIdAndUpdate(
+                bookingId,
+                { isPaid: true },
+                { new: true }
+            );
+
+            if (!booking) {
+                return res.status(404).json({ success: false, message: "Booking not found" });
+            }
+
+            console.log(`Booking ${bookingId} marked as paid`);
+            return res.json({ success: true, message: "Payment verified successfully", booking });
+        } else {
+            return res.json({ success: false, message: "Payment not completed" });
+        }
+    } catch (error) {
+        console.error("Verify payment error:", error);
+        res.status(500).json({ success: false, message: "Failed to verify payment: " + error.message });
+    }
+}
+
+// Webhook to handle Stripe payment events
+// POST /api/bookings/stripe-webhook
+export const stripeWebhook = async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    const stripeInstance = new stripe(process.env.STRIPE_SECRET_KEY);
+
+    let event;
+
+    try {
+        event = stripeInstance.webhooks.constructEvent(
+            req.body,
+            sig,
+            process.env.STRIPE_WEBHOOK_SECRET
+        );
+    } catch (err) {
+        console.error('Webhook signature verification failed:', err.message);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    // Handle the event
+    switch (event.type) {
+        case 'checkout.session.completed':
+            const session = event.data.object;
+            
+            if (session.payment_status === 'paid') {
+                const bookingId = session.metadata.bookingId;
+                
+                try {
+                    await Booking.findByIdAndUpdate(bookingId, { isPaid: true });
+                    console.log(`Booking ${bookingId} marked as paid via webhook`);
+                } catch (error) {
+                    console.error('Error updating booking:', error);
+                }
+            }
+            break;
+        default:
+            console.log(`Unhandled event type ${event.type}`);
+    }
+
+    res.json({ received: true });
 }
