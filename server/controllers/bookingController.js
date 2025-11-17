@@ -199,10 +199,13 @@ export const verifyPayment = async (req, res) => {
         if (session.payment_status === 'paid') {
             const bookingId = session.metadata.bookingId;
             
-            // Update booking payment status
+            // Update booking payment status and payment method
             const booking = await Booking.findByIdAndUpdate(
                 bookingId,
-                { isPaid: true },
+                { 
+                    isPaid: true,
+                    paymentMethod: 'Stripe'
+                },
                 { new: true }
             );
 
@@ -210,7 +213,7 @@ export const verifyPayment = async (req, res) => {
                 return res.status(404).json({ success: false, message: "Booking not found" });
             }
 
-            console.log(`Booking ${bookingId} marked as paid`);
+            console.log(`Booking ${bookingId} marked as paid via Stripe`);
             return res.json({ success: true, message: "Payment verified successfully", booking });
         } else {
             return res.json({ success: false, message: "Payment not completed" });
@@ -219,46 +222,4 @@ export const verifyPayment = async (req, res) => {
         console.error("Verify payment error:", error);
         res.status(500).json({ success: false, message: "Failed to verify payment: " + error.message });
     }
-}
-
-// Webhook to handle Stripe payment events
-// POST /api/bookings/stripe-webhook
-export const stripeWebhook = async (req, res) => {
-    const sig = req.headers['stripe-signature'];
-    const stripeInstance = new stripe(process.env.STRIPE_SECRET_KEY);
-
-    let event;
-
-    try {
-        event = stripeInstance.webhooks.constructEvent(
-            req.body,
-            sig,
-            process.env.STRIPE_WEBHOOK_SECRET
-        );
-    } catch (err) {
-        console.error('Webhook signature verification failed:', err.message);
-        return res.status(400).send(`Webhook Error: ${err.message}`);
-    }
-
-    // Handle the event
-    switch (event.type) {
-        case 'checkout.session.completed':
-            const session = event.data.object;
-            
-            if (session.payment_status === 'paid') {
-                const bookingId = session.metadata.bookingId;
-                
-                try {
-                    await Booking.findByIdAndUpdate(bookingId, { isPaid: true });
-                    console.log(`Booking ${bookingId} marked as paid via webhook`);
-                } catch (error) {
-                    console.error('Error updating booking:', error);
-                }
-            }
-            break;
-        default:
-            console.log(`Unhandled event type ${event.type}`);
-    }
-
-    res.json({ received: true });
 }

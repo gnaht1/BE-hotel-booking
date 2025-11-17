@@ -4,12 +4,12 @@ import cors from "cors";
 import connectDB from "./configs/db.js";
 import { clerkMiddleware } from '@clerk/express'
 import clerkWebhook from "./controllers/ClerkWebhooks.js";
+import stripeWebhook from "./controllers/stripeWebhook.js";
 import userRouter from "./routes/userRoutes.js";
 import hotelRouter from "./routes/hotelRoutes.js";
 import connectCloudinary from "./configs/cloudinary.js";
 import roomRouter from "./routes/roomRoutes.js";
 import bookingRouter from "./routes/bookingRoutes.js";
-import { stripeWebhook } from "./controllers/bookingController.js";
 
 connectDB();
 connectCloudinary();
