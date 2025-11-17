@@ -4,6 +4,7 @@ import cors from "cors";
 import connectDB from "./configs/db.js";
 import { clerkMiddleware } from '@clerk/express'
 import clerkWebhook from "./controllers/ClerkWebhooks.js";
+import stripeWebhook from "./controllers/stripeWebhook.js";
 import userRouter from "./routes/userRoutes.js";
 import hotelRouter from "./routes/hotelRoutes.js";
 import connectCloudinary from "./configs/cloudinary.js";
@@ -15,6 +16,9 @@ connectCloudinary();
 
 const app = express();
 app.use(cors()); // Enable CORS for all routes
+
+// Stripe webhook needs raw body - must come before express.json()
+app.post('/api/bookings/stripe-webhook', express.raw({type: 'application/json'}), stripeWebhook);
 
 // Clerk middleware
 app.use(express.json());

@@ -138,6 +138,11 @@ export const stripePayment = async (req, res) =>{
         const {bookingId} = req.body;
 
         const booking = await Booking.findById(bookingId);  
+        
+        if (!booking) {
+            return res.status(404).json({ success: false, message: "Booking not found" });
+        }
+
         const roomData = await Room.findById(booking.room).populate("hotel");
         const totalPrice = booking.totalPrice;
         const {origin} = req.headers;
@@ -162,16 +167,59 @@ export const stripePayment = async (req, res) =>{
         const session = await stripeInstance.checkout.sessions.create({
             line_items,
             mode: "payment",
-            success_url: `${origin}/loader/my-bookings`,
+            success_url: `${origin}/loader/my-bookings?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${origin}/my-bookings`,
             metadata: {
                 bookingId,
-
             }
         })
         res.json({ success: true, url: session.url });
     }
     catch (error) {
-        res.json({ success: false, message: "Failed payment!" });
+        console.error("Stripe payment error:", error);
+        res.status(500).json({ success: false, message: "Failed payment: " + error.message });
+    }
+}
+
+// API to verify Stripe payment and update booking
+// POST /api/bookings/verify-payment
+export const verifyPayment = async (req, res) => {
+    try {
+        const { sessionId } = req.body;
+
+        if (!sessionId) {
+            return res.status(400).json({ success: false, message: "Session ID is required" });
+        }
+
+        const stripeInstance = new stripe(process.env.STRIPE_SECRET_KEY);
+        
+        // Retrieve the session from Stripe
+        const session = await stripeInstance.checkout.sessions.retrieve(sessionId);
+
+        if (session.payment_status === 'paid') {
+            const bookingId = session.metadata.bookingId;
+            
+            // Update booking payment status and payment method
+            const booking = await Booking.findByIdAndUpdate(
+                bookingId,
+                { 
+                    isPaid: true,
+                    paymentMethod: 'Stripe'
+                },
+                { new: true }
+            );
+
+            if (!booking) {
+                return res.status(404).json({ success: false, message: "Booking not found" });
+            }
+
+            console.log(`Booking ${bookingId} marked as paid via Stripe`);
+            return res.json({ success: true, message: "Payment verified successfully", booking });
+        } else {
+            return res.json({ success: false, message: "Payment not completed" });
+        }
+    } catch (error) {
+        console.error("Verify payment error:", error);
+        res.status(500).json({ success: false, message: "Failed to verify payment: " + error.message });
     }
 }
