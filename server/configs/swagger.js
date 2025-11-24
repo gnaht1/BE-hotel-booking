@@ -10,7 +10,7 @@ const options = {
         },
         servers: [
             {
-                url: 'https://be-hotel-booking-ruddy.vercel.app/', // Modify URL
+                url: 'https://be-hotel-booking-ruddy.vercel.app', // Modify URL
                 description: 'Local server',
             },
         ],
