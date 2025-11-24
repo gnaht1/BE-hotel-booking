@@ -10,6 +10,8 @@ import hotelRouter from "./routes/hotelRoutes.js";
 import connectCloudinary from "./configs/cloudinary.js";
 import roomRouter from "./routes/roomRoutes.js";
 import bookingRouter from "./routes/bookingRoutes.js";
+import swaggerUi from "swagger-ui-express";
+import swaggerSpec from "./configs/swagger.js";
 
 connectDB();
 connectCloudinary();
@@ -18,7 +20,7 @@ const app = express();
 app.use(cors()); // Enable CORS for all routes
 
 // Stripe webhook needs raw body - must come before express.json()
-app.post('/api/bookings/stripe-webhook', express.raw({type: 'application/json'}), stripeWebhook);
+app.post('/api/bookings/stripe-webhook', express.raw({ type: 'application/json' }), stripeWebhook);
 
 // Clerk middleware
 app.use(express.json());
@@ -27,12 +29,13 @@ app.use(clerkMiddleware())
 // api to listen to clerk webhook
 app.use("/api/clerk", clerkWebhook);
 
-app.get('/', (req, res) => res.send("API is working"));   
+app.get('/', (req, res) => res.send("API is working"));
 app.use("/api/user", userRouter);
 app.use("/api/hotels", hotelRouter);
 app.use("/api/rooms", roomRouter);
 app.use("/api/bookings", bookingRouter);
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, ()=> console.log(`Server is running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
