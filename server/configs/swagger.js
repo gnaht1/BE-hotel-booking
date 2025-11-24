@@ -38,8 +38,13 @@ const options = {
             },
         ],
     },
-    // Use absolute paths to work on both local and Vercel
-    apis: [path.join(__dirname, '../routes/*.js')],
+    // Explicitly list all route files to ensure they're found on Vercel
+    apis: [
+        path.join(__dirname, '../routes/userRoutes.js'),
+        path.join(__dirname, '../routes/hotelRoutes.js'),
+        path.join(__dirname, '../routes/roomRoutes.js'),
+        path.join(__dirname, '../routes/bookingRoutes.js'),
+    ],
 };
 
 const swaggerSpec = swaggerJsdoc(options);
