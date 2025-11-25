@@ -13,10 +13,26 @@ import bookingRouter from "./routes/bookingRoutes.js";
 import swaggerUi from "swagger-ui-express";
 import swaggerSpec from "./configs/swagger.js";
 
-connectDB();
+const app = express();
+
+// Middleware to ensure DB connection before handling requests
+app.use(async (req, res, next) => {
+    try {
+        await connectDB();
+        next();
+    } catch (error) {
+        res.status(503).json({ 
+            success: false, 
+            message: "Database connection failed" 
+        });
+    }
+});
+
+// Initialize connections on startup (but don't block)
+connectDB().catch(console.error);
+
 connectCloudinary();
 
-const app = express();
 app.use(cors()); // Enable CORS for all routes
 
 // Stripe webhook needs raw body - must come before express.json()
