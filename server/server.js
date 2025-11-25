@@ -13,25 +13,11 @@ import bookingRouter from "./routes/bookingRoutes.js";
 import swaggerUi from "swagger-ui-express";
 import swaggerSpec from "./configs/swagger.js";
 
-const app = express();
-
-// Middleware to ensure DB connection before handling requests
-app.use(async (req, res, next) => {
-    try {
-        await connectDB();
-        next();
-    } catch (error) {
-        res.status(503).json({ 
-            success: false, 
-            message: "Database connection failed" 
-        });
-    }
-});
-
-// Initialize connections on startup (but don't block)
-connectDB().catch(console.error);
-
+// Initialize connections early (for serverless, this caches the connection)
+connectDB().catch(err => console.error("Initial DB connection error:", err));
 connectCloudinary();
+
+const app = express();
 
 app.use(cors()); // Enable CORS for all routes
 
@@ -41,6 +27,20 @@ app.post('/api/bookings/stripe-webhook', express.raw({ type: 'application/json' 
 // Clerk middleware
 app.use(express.json());
 app.use(clerkMiddleware())
+
+// Lightweight DB connection middleware - ensure connection is ready
+app.use(async (req, res, next) => {
+    try {
+        await connectDB();
+        next();
+    } catch (error) {
+        console.error("Database connection error:", error);
+        res.status(503).json({ 
+            success: false, 
+            message: "Database connection failed. Please try again." 
+        });
+    }
+});
 
 // api to listen to clerk webhook
 app.use("/api/clerk", clerkWebhook);
@@ -54,4 +54,10 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+// Only start server if not in Vercel serverless environment
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+    app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+}
+
+// Export for Vercel serverless
+export default app;
