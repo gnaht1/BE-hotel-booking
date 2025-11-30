@@ -1,7 +1,7 @@
 import express from "express";
 import upload from "../middleware/uploadMiddleware.js";
 import { protect } from "../middleware/authMiddleware.js";
-import { createRoom, getOwnerRooms, getRooms, toggleRoomAvailability } from "../controllers/roomController.js";
+import { createRoom, getOwnerRooms, getRooms, toggleRoomAvailability, updateRoom, deleteRoom } from "../controllers/roomController.js";
 
 const roomRouter = express.Router();
 
@@ -109,5 +109,73 @@ roomRouter.get('/owner', protect, getOwnerRooms);
  *         description: Unauthorized
  */
 roomRouter.post('/toggle-availability', protect, toggleRoomAvailability);
+
+/**
+ * @swagger
+ * /api/rooms/{roomId}:
+ *   put:
+ *     summary: Update a room
+ *     tags: [Rooms]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: roomId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Room ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               roomType:
+ *                 type: string
+ *               pricePerNight:
+ *                 type: number
+ *               amenities:
+ *                 type: string
+ *                 description: JSON string of amenities
+ *               images:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *     responses:
+ *       200:
+ *         description: Room updated successfully
+ *       401:
+ *         description: Unauthorized
+ *   delete:
+ *     summary: Delete a room
+ *     tags: [Rooms]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: roomId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Room ID
+ *     responses:
+ *       200:
+ *         description: Room deleted successfully
+ *       401:
+ *         description: Unauthorized
+ */
+roomRouter.put('/:roomId', (req, res, next) => {
+    upload.array("images", 4)(req, res, (err) => {
+        if (err) {
+            console.error('Multer error:', err);
+            return res.json({ success: false, message: err.message });
+        }
+        next();
+    });
+}, protect, updateRoom);
+roomRouter.delete('/:roomId', protect, deleteRoom);
 
 export default roomRouter;
