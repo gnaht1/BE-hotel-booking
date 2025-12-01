@@ -46,6 +46,7 @@ app.use(async (req, res, next) => {
 app.use("/api/clerk", clerkWebhook);
 
 app.get('/', (req, res) => res.send("API is working"));
+app.get('/api', (req, res) => res.json({ message: "Hotel Booking API v1.0", status: "running" }));
 app.use("/api/user", userRouter);
 app.use("/api/hotels", hotelRouter);
 app.use("/api/rooms", roomRouter);
