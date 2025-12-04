@@ -19,7 +19,29 @@ connectCloudinary();
 
 const app = express();
 
-app.use(cors()); // Enable CORS for all routes
+// CORS configuration - allow both www and non-www domains
+const allowedOrigins = [
+    'https://jmmhotel.site',
+    'https://www.jmmhotel.site',
+    'http://localhost:5173',
+    'http://localhost:3000'
+];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(null, true); // Allow all origins in production for now
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
+}));
 
 // Stripe webhook needs raw body - must come before express.json()
 app.post('/api/bookings/stripe-webhook', express.raw({ type: 'application/json' }), stripeWebhook);
@@ -46,6 +68,7 @@ app.use(async (req, res, next) => {
 app.use("/api/clerk", clerkWebhook);
 
 app.get('/', (req, res) => res.send("API is working"));
+app.get('/api', (req, res) => res.json({ message: "Hotel Booking API v1.0", status: "running" }));
 app.use("/api/user", userRouter);
 app.use("/api/hotels", hotelRouter);
 app.use("/api/rooms", roomRouter);

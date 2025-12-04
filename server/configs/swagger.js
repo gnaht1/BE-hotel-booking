@@ -15,7 +15,7 @@ const options = {
         servers: [
             {
                 // Use a variable or hardcode the production URL
-                url: 'https://be-hotel-booking-ruddy.vercel.app',
+                url: 'https://jmmhotel.site',
                 description: 'Production server',
             },
             {
