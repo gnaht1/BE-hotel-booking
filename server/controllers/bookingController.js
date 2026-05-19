@@ -7,15 +7,33 @@ import stripe from "stripe";
 // Function to Check Availability of Room
 const checkAvailability = async ({ checkInDate, checkOutDate, room })=>{
     try {
+        const checkIn = new Date(checkInDate);
+        const checkOut = new Date(checkOutDate);
+
+        if (!room || Number.isNaN(checkIn.getTime()) || Number.isNaN(checkOut.getTime())) {
+            return { success: false, message: "Invalid room or dates" };
+        }
+
+        if (checkOut <= checkIn) {
+            return { success: false, message: "Check-out date must be after check-in date" };
+        }
+
+        const roomData = await Room.findById(room);
+        if (!roomData || !roomData.isAvailable) {
+            return { success: true, isAvailable: false };
+        }
+
         const bookings = await Booking.find({
             room,
-            checkInDate: {$lte: checkOutDate},
-            checkOutDate: {$gte: checkInDate},
+            status: { $ne: "cancelled" },
+            checkInDate: {$lt: checkOut},
+            checkOutDate: {$gt: checkIn},
         });
         const isAvailable = bookings.length === 0;
-        return isAvailable;
+        return { success: true, isAvailable };
     } catch (error) {
         console.error(error.message);
+        return { success: false, message: error.message };
     }
 }
 // API to check availability of room
@@ -23,10 +41,13 @@ const checkAvailability = async ({ checkInDate, checkOutDate, room })=>{
 export const checkAvailabilityAPI = async (req, res) =>{
     try {
         const { room, checkInDate, checkOutDate } = req.body;
-        const isAvailable = await checkAvailability({ checkInDate, checkOutDate, room });
-        res.json({ success: true, isAvailable });
+        const result = await checkAvailability({ checkInDate, checkOutDate, room });
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+        res.json({ success: true, isAvailable: result.isAvailable, available: result.isAvailable });
     } catch (error) {
-        res.json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 }
 // API to create a new booking
@@ -37,17 +58,24 @@ export const createBooking = async (req, res) =>{
         const user = req.user._id;
 
         // Before Booking Check Availability
-        const isAvailable = await checkAvailability({
+        const availability = await checkAvailability({
             checkInDate,
             checkOutDate,
             room
         });
 
-        if(!isAvailable){
+        if(!availability.success){
+            return res.status(400).json({success: false, message: availability.message});
+        }
+
+        if(!availability.isAvailable){
             return res.json({success: false, message: "Room is not available"});
         }
         // Get totalPrice from Room
         const roomData = await Room.findById(room).populate("hotel");
+        if (!roomData) {
+            return res.status(404).json({success: false, message: "Room not found"});
+        }
         let totalPrice = roomData.pricePerNight;
 
         // Calculate totalPrice based on nights
@@ -85,7 +113,11 @@ const mailOptions = {
     `
 }
 
-        await transporter.sendMail(mailOptions);
+        try {
+            await transporter.sendMail(mailOptions);
+        } catch (mailError) {
+            console.error("Booking confirmation email failed:", mailError.message);
+        }
 
         res.json({ success: true, message: "Booking created successfully" })
     } catch (error) {
@@ -143,7 +175,18 @@ export const stripePayment = async (req, res) =>{
             return res.status(404).json({ success: false, message: "Booking not found" });
         }
 
+        if (booking.user !== req.user._id) {
+            return res.status(403).json({ success: false, message: "Unauthorized booking" });
+        }
+
+        if (booking.isPaid) {
+            return res.json({ success: false, message: "Booking is already paid" });
+        }
+
         const roomData = await Room.findById(booking.room).populate("hotel");
+        if (!roomData) {
+            return res.status(404).json({ success: false, message: "Room not found" });
+        }
         const totalPrice = booking.totalPrice;
         const {origin} = req.headers;
 
@@ -178,6 +221,63 @@ export const stripePayment = async (req, res) =>{
     catch (error) {
         console.error("Stripe payment error:", error);
         res.status(500).json({ success: false, message: "Failed payment: " + error.message });
+    }
+}
+
+export const createPaymentIntent = async (req, res) => {
+    try {
+        const { bookingId } = req.body;
+
+        if (!bookingId) {
+            return res.status(400).json({ success: false, message: "Booking ID is required" });
+        }
+
+        const booking = await Booking.findById(bookingId).populate("room hotel");
+        if (!booking) {
+            return res.status(404).json({ success: false, message: "Booking not found" });
+        }
+
+        if (booking.user !== req.user._id) {
+            return res.status(403).json({ success: false, message: "Unauthorized booking" });
+        }
+
+        if (booking.isPaid) {
+            return res.json({ success: false, message: "Booking is already paid" });
+        }
+
+        if (!booking.totalPrice || booking.totalPrice <= 0) {
+            return res.status(400).json({ success: false, message: "Invalid booking amount" });
+        }
+
+        const stripeInstance = new stripe(process.env.STRIPE_SECRET_KEY);
+        const amount = Math.round(booking.totalPrice * 100);
+        const currency = (process.env.STRIPE_CURRENCY || "usd").toLowerCase();
+
+        const paymentIntent = await stripeInstance.paymentIntents.create({
+            amount,
+            currency,
+            automatic_payment_methods: {
+                enabled: true,
+            },
+            metadata: {
+                bookingId: booking._id.toString(),
+                userId: req.user._id,
+                source: "mobile",
+            },
+            description: `Hotel booking ${booking._id}`,
+        });
+
+        res.json({
+            success: true,
+            clientSecret: paymentIntent.client_secret,
+            paymentIntentId: paymentIntent.id,
+            bookingId: booking._id,
+            amount,
+            currency,
+        });
+    } catch (error) {
+        console.error("Create payment intent error:", error);
+        res.status(500).json({ success: false, message: "Failed to create payment intent: " + error.message });
     }
 }
 
@@ -221,5 +321,58 @@ export const verifyPayment = async (req, res) => {
     } catch (error) {
         console.error("Verify payment error:", error);
         res.status(500).json({ success: false, message: "Failed to verify payment: " + error.message });
+    }
+}
+
+export const verifyPaymentIntent = async (req, res) => {
+    try {
+        const { paymentIntentId } = req.body;
+
+        if (!paymentIntentId) {
+            return res.status(400).json({ success: false, message: "PaymentIntent ID is required" });
+        }
+
+        const stripeInstance = new stripe(process.env.STRIPE_SECRET_KEY);
+        const paymentIntent = await stripeInstance.paymentIntents.retrieve(paymentIntentId);
+        const bookingId = paymentIntent.metadata?.bookingId;
+
+        if (!bookingId) {
+            return res.status(400).json({ success: false, message: "PaymentIntent is missing booking metadata" });
+        }
+
+        const booking = await Booking.findById(bookingId);
+        if (!booking) {
+            return res.status(404).json({ success: false, message: "Booking not found" });
+        }
+
+        if (booking.user !== req.user._id) {
+            return res.status(403).json({ success: false, message: "Unauthorized booking" });
+        }
+
+        if (paymentIntent.status !== "succeeded") {
+            return res.json({
+                success: false,
+                message: `Payment not completed. Status: ${paymentIntent.status}`,
+                status: paymentIntent.status,
+            });
+        }
+
+        const updatedBooking = await Booking.findByIdAndUpdate(
+            bookingId,
+            {
+                isPaid: true,
+                paymentMethod: "Stripe",
+            },
+            { new: true }
+        );
+
+        res.json({
+            success: true,
+            message: "Payment verified successfully",
+            booking: updatedBooking,
+        });
+    } catch (error) {
+        console.error("Verify payment intent error:", error);
+        res.status(500).json({ success: false, message: "Failed to verify payment intent: " + error.message });
     }
 }

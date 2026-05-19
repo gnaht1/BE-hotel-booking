@@ -2,10 +2,12 @@ import express from 'express';
 import {
     checkAvailabilityAPI,
     createBooking,
+    createPaymentIntent,
     getHotelBookings,
     getUserBookings,
     stripePayment,
-    verifyPayment
+    verifyPayment,
+    verifyPaymentIntent
 } from '../controllers/bookingController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -148,6 +150,33 @@ bookingRouter.post('/stripe-payment', protect, stripePayment);
 
 /**
  * @swagger
+ * /api/bookings/payment-intent:
+ *   post:
+ *     summary: Create Stripe PaymentIntent for mobile in-app payment
+ *     tags: [Bookings]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - bookingId
+ *             properties:
+ *               bookingId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: PaymentIntent created
+ *       401:
+ *         description: Unauthorized
+ */
+bookingRouter.post('/payment-intent', protect, createPaymentIntent);
+
+/**
+ * @swagger
  * /api/bookings/verify-payment:
  *   post:
  *     summary: Verify Stripe payment
@@ -172,6 +201,33 @@ bookingRouter.post('/stripe-payment', protect, stripePayment);
  *         description: Unauthorized
  */
 bookingRouter.post('/verify-payment', protect, verifyPayment);
+
+/**
+ * @swagger
+ * /api/bookings/verify-payment-intent:
+ *   post:
+ *     summary: Verify mobile Stripe PaymentIntent and mark booking paid
+ *     tags: [Bookings]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - paymentIntentId
+ *             properties:
+ *               paymentIntentId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: PaymentIntent verification result
+ *       401:
+ *         description: Unauthorized
+ */
+bookingRouter.post('/verify-payment-intent', protect, verifyPaymentIntent);
 
 // Note: Webhook endpoint is handled directly in server.js before JSON parsing
 

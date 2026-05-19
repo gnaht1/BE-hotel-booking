@@ -41,7 +41,22 @@ export const stripeWebhook = async (req, res) => {
             break;
         
         case 'payment_intent.succeeded':
-            console.log('Payment intent succeeded:', event.data.object.id);
+            const paymentIntent = event.data.object;
+            const paymentIntentBookingId = paymentIntent.metadata?.bookingId;
+
+            if (paymentIntentBookingId) {
+                try {
+                    await Booking.findByIdAndUpdate(paymentIntentBookingId, {
+                        isPaid: true,
+                        paymentMethod: 'Stripe'
+                    });
+                    console.log(`Booking ${paymentIntentBookingId} marked as paid via PaymentIntent webhook`);
+                } catch (error) {
+                    console.error('Error updating booking from PaymentIntent:', error);
+                }
+            } else {
+                console.log('Payment intent succeeded without bookingId metadata:', paymentIntent.id);
+            }
             break;
         
         case 'payment_intent.payment_failed':
@@ -56,4 +71,3 @@ export const stripeWebhook = async (req, res) => {
 };
 
 export default stripeWebhook;
-
