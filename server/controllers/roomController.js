@@ -100,7 +100,7 @@ export const toggleRoomAvailability = async (req, res)=>{
 export const updateRoom = async (req, res) => {
     try {
         const { roomId } = req.params;
-        const { roomType, pricePerNight, amenities } = req.body;
+        const { roomType, pricePerNight, amenities, existingImages } = req.body;
 
         // Find the room
         const room = await Room.findById(roomId);
@@ -118,6 +118,8 @@ export const updateRoom = async (req, res) => {
         if (roomType) room.roomType = roomType;
         if (pricePerNight) room.pricePerNight = +pricePerNight;
         if (amenities) room.amenities = JSON.parse(amenities);
+
+        let nextImages = existingImages ? JSON.parse(existingImages) : room.images;
 
         // Handle image updates if new images are uploaded
         if (req.files && req.files.length > 0) {
@@ -138,8 +140,18 @@ export const updateRoom = async (req, res) => {
                 });
             });
             const newImages = await Promise.all(uploadImages);
-            room.images = newImages;
+            nextImages = [...nextImages, ...newImages];
         }
+
+        if (!nextImages || nextImages.length === 0) {
+            return res.json({ success: false, message: "At least one image is required" });
+        }
+
+        if (nextImages.length > 4) {
+            return res.json({ success: false, message: "A room can have up to 4 images" });
+        }
+
+        room.images = nextImages;
 
         await room.save();
         res.json({ success: true, message: "Room updated successfully", room });
