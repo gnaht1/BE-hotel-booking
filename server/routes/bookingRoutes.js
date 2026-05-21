@@ -3,6 +3,7 @@ import {
     checkAvailabilityAPI,
     createBooking,
     createPaymentIntent,
+    deleteUnpaidBooking,
     getHotelBookings,
     getUserBookings,
     stripePayment,
@@ -174,6 +175,8 @@ bookingRouter.post('/stripe-payment', protect, stripePayment);
  *         description: Unauthorized
  */
 bookingRouter.post('/payment-intent', protect, createPaymentIntent);
+
+bookingRouter.delete('/:bookingId', protect, deleteUnpaidBooking);
 
 /**
  * @swagger

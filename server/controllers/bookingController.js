@@ -4,6 +4,8 @@ import Hotel from "../models/Hotel.js";
 import Room from "../models/Room.js";
 import stripe from "stripe";    
 
+const BOOKING_PAYMENT_HOLD_MS = 10 * 60 * 1000;
+
 // Function to Check Availability of Room
 const checkAvailability = async ({ checkInDate, checkOutDate, room })=>{
     try {
@@ -40,8 +42,8 @@ const checkAvailability = async ({ checkInDate, checkOutDate, room })=>{
 // POST /api/bookings/check-availability
 export const checkAvailabilityAPI = async (req, res) =>{
     try {
-        const { room, checkInDate, checkOutDate } = req.body;
-        const result = await checkAvailability({ checkInDate, checkOutDate, room });
+        const { room, roomId, checkInDate, checkOutDate } = req.body;
+        const result = await checkAvailability({ checkInDate, checkOutDate, room: room || roomId });
         if (!result.success) {
             return res.status(400).json(result);
         }
@@ -54,14 +56,15 @@ export const checkAvailabilityAPI = async (req, res) =>{
 // POST /api/bookings/book
 export const createBooking = async (req, res) =>{
     try {
-        const { room, checkInDate, checkOutDate, guests } = req.body;
+        const { room, roomId, checkInDate, checkOutDate, guests } = req.body;
+        const selectedRoom = room || roomId;
         const user = req.user._id;
 
         // Before Booking Check Availability
         const availability = await checkAvailability({
             checkInDate,
             checkOutDate,
-            room
+            room: selectedRoom
         });
 
         if(!availability.success){
@@ -72,7 +75,7 @@ export const createBooking = async (req, res) =>{
             return res.json({success: false, message: "Room is not available"});
         }
         // Get totalPrice from Room
-        const roomData = await Room.findById(room).populate("hotel");
+        const roomData = await Room.findById(selectedRoom).populate("hotel");
         if (!roomData) {
             return res.status(404).json({success: false, message: "Room not found"});
         }
@@ -88,7 +91,7 @@ export const createBooking = async (req, res) =>{
 
         const booking = await Booking.create({
             user,
-            room,
+            room: selectedRoom,
             hotel: roomData.hotel._id,
             guests: +guests,
             checkInDate,
@@ -119,7 +122,12 @@ const mailOptions = {
             console.error("Booking confirmation email failed:", mailError.message);
         }
 
-        res.json({ success: true, message: "Booking created successfully" })
+        res.json({
+            success: true,
+            message: "Booking created successfully",
+            booking,
+            bookingId: booking._id,
+        })
     } catch (error) {
         console.log(error);
         res.json({ success: false, message: "Failed to create booking" })
@@ -175,7 +183,7 @@ export const stripePayment = async (req, res) =>{
             return res.status(404).json({ success: false, message: "Booking not found" });
         }
 
-        if (booking.user !== req.user._id) {
+        if (booking.user.toString() !== req.user._id.toString()) {
             return res.status(403).json({ success: false, message: "Unauthorized booking" });
         }
 
@@ -237,12 +245,17 @@ export const createPaymentIntent = async (req, res) => {
             return res.status(404).json({ success: false, message: "Booking not found" });
         }
 
-        if (booking.user !== req.user._id) {
+        if (booking.user.toString() !== req.user._id.toString()) {
             return res.status(403).json({ success: false, message: "Unauthorized booking" });
         }
 
         if (booking.isPaid) {
             return res.json({ success: false, message: "Booking is already paid" });
+        }
+
+        if (Date.now() - booking.createdAt.getTime() > BOOKING_PAYMENT_HOLD_MS) {
+            await Booking.findByIdAndDelete(booking._id);
+            return res.status(410).json({ success: false, message: "Booking payment window expired" });
         }
 
         if (!booking.totalPrice || booking.totalPrice <= 0) {
@@ -261,7 +274,7 @@ export const createPaymentIntent = async (req, res) => {
             },
             metadata: {
                 bookingId: booking._id.toString(),
-                userId: req.user._id,
+                userId: req.user._id.toString(),
                 source: "mobile",
             },
             description: `Hotel booking ${booking._id}`,
@@ -278,6 +291,35 @@ export const createPaymentIntent = async (req, res) => {
     } catch (error) {
         console.error("Create payment intent error:", error);
         res.status(500).json({ success: false, message: "Failed to create payment intent: " + error.message });
+    }
+}
+
+export const deleteUnpaidBooking = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+
+        if (!bookingId) {
+            return res.status(400).json({ success: false, message: "Booking ID is required" });
+        }
+
+        const booking = await Booking.findById(bookingId);
+        if (!booking) {
+            return res.json({ success: true, message: "Booking already removed" });
+        }
+
+        if (booking.user.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ success: false, message: "Unauthorized booking" });
+        }
+
+        if (booking.isPaid) {
+            return res.status(400).json({ success: false, message: "Paid bookings cannot be deleted" });
+        }
+
+        await Booking.findByIdAndDelete(bookingId);
+        res.json({ success: true, message: "Booking deleted successfully" });
+    } catch (error) {
+        console.error("Delete unpaid booking error:", error);
+        res.status(500).json({ success: false, message: "Failed to delete booking: " + error.message });
     }
 }
 
@@ -345,7 +387,7 @@ export const verifyPaymentIntent = async (req, res) => {
             return res.status(404).json({ success: false, message: "Booking not found" });
         }
 
-        if (booking.user !== req.user._id) {
+        if (booking.user.toString() !== req.user._id.toString()) {
             return res.status(403).json({ success: false, message: "Unauthorized booking" });
         }
 
