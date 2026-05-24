@@ -1,10 +1,11 @@
 import User from "../models/User.js";
-import { clerkClient } from "@clerk/express";
+import { clerkClient, getAuth } from "@clerk/express";
 
 // Middleware to check if user is authenticated
 export const protect = async(req,res, next) =>{
     try {
-        const {userId} = req.auth;
+        const auth = typeof req.auth === "function" ? req.auth() : (req.auth || getAuth(req));
+        const {userId} = auth;
         if (!userId) {
             return res.status(401).json({success: false, message: "Unauthorized - No user ID provided"});
         }
@@ -35,6 +36,7 @@ export const protect = async(req,res, next) =>{
         }
         
         req.user = user;
+        req.auth = auth;
         next();
     } catch (error) {
         console.error("Auth middleware error:", error);

@@ -6,6 +6,35 @@ import stripe from "stripe";
 
 const BOOKING_PAYMENT_HOLD_MS = 10 * 60 * 1000;
 
+const sendBookingConfirmationEmail = async ({ booking, user }) => {
+    try {
+        const populatedBooking = await Booking.findById(booking._id).populate("room hotel");
+        if (!populatedBooking || populatedBooking.confirmationEmailSent) return;
+
+        const mailOptions = {
+            from: process.env.SENDER_EMAIL,
+            to: user.email,
+            subject: 'Hotel Booking Details',
+            html: `
+            <h2>Your Booking Details</h2>
+            <p>Dear ${user.username},</p>
+            <p>Thank you for your payment! Here are your booking details:</p>
+            <ul>
+                <li><strong>Booking ID:</strong> ${populatedBooking._id}</li>
+                <li><strong>Hotel Name:</strong> ${populatedBooking.hotel?.name || 'Hotel'}</li>
+                <li><strong>Location:</strong> ${populatedBooking.hotel?.address || ''}</li>
+                <li><strong>Date:</strong> ${populatedBooking.checkInDate.toDateString()}</li>
+                <li><strong>Booking Amount:</strong> ${process.env.CURRENCY || '$'} ${populatedBooking.totalPrice}</li>
+            </ul>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+        await Booking.findByIdAndUpdate(populatedBooking._id, { confirmationEmailSent: true });
+    } catch (mailError) {
+        console.error("Booking confirmation email failed:", mailError.message);
+    }
+};
 // Function to Check Availability of Room
 const checkAvailability = async ({ checkInDate, checkOutDate, room })=>{
     try {
@@ -98,30 +127,6 @@ export const createBooking = async (req, res) =>{
             checkOutDate,
             totalPrice,
         })
-const mailOptions = {
-    from: process.env.SENDER_EMAIL,
-    to: req.user.email,
-    subject: 'Hotel Booking Details',
-    html: `
-    <h2>Your Booking Details</h2>
-    <p>Dear ${req.user.username},</p>
-    <p>Thank you for your booking! Here are your details:</p>
-    <ul>
-        <li><strong>Booking ID:</strong> ${booking._id}</li>
-        <li><strong>Hotel Name:</strong> ${roomData.hotel.name}</li>
-        <li><strong>Location:</strong> ${roomData.hotel.address}</li>
-        <li><strong>Date:</strong> ${booking.checkInDate.toDateString()}</li>
-        <li><strong>Booking Amount:</strong> ${process.env.CURRENCY || '$'} ${booking.totalPrice} /night</li>
-    </ul>
-    `
-}
-
-        try {
-            await transporter.sendMail(mailOptions);
-        } catch (mailError) {
-            console.error("Booking confirmation email failed:", mailError.message);
-        }
-
         res.json({
             success: true,
             message: "Booking created successfully",
@@ -269,9 +274,7 @@ export const createPaymentIntent = async (req, res) => {
         const paymentIntent = await stripeInstance.paymentIntents.create({
             amount,
             currency,
-            automatic_payment_methods: {
-                enabled: true,
-            },
+            payment_method_types: ["card"],
             metadata: {
                 bookingId: booking._id.toString(),
                 userId: req.user._id.toString(),
@@ -356,6 +359,7 @@ export const verifyPayment = async (req, res) => {
             }
 
             console.log(`Booking ${bookingId} marked as paid via Stripe`);
+            await sendBookingConfirmationEmail({ booking, user: req.user });
             return res.json({ success: true, message: "Payment verified successfully", booking });
         } else {
             return res.json({ success: false, message: "Payment not completed" });
@@ -407,6 +411,8 @@ export const verifyPaymentIntent = async (req, res) => {
             },
             { new: true }
         );
+
+        await sendBookingConfirmationEmail({ booking: updatedBooking, user: req.user });
 
         res.json({
             success: true,
